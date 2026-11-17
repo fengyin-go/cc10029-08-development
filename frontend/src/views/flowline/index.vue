@@ -24,10 +24,85 @@
       <dl><dt>编号</dt><dd>{{ selectedNode.id }}</dd></dl>
       <dl><dt>名称</dt><dd>{{ selectedNode.name || selectedNode.label }}</dd></dl>
       <dl v-for="f in detailFields" :key="f"><dt>{{ f }}</dt><dd>{{ selectedNode[f] ?? '—' }}</dd></dl>
-      <div style="grid-column:1/-1; margin-top:8px; display:flex; gap:6px;">
+      <div style="grid-column:1/-1; margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
         <button v-for="action in actions" :key="action" class="btn" :data-testid="`action-${selectedNode.id}-${action}`" @click="runAction(action, selectedNode)">{{ action }}</button>
+        <button class="btn primary" type="button" :data-testid="`run-${selectedNode.id}`" @click="startRun(selectedNode.id)">执行流程</button>
       </div>
     </div>
+
+    <section class="run-panel">
+      <header class="run-panel-head">
+        <h3>流程运行</h3>
+        <button class="btn ghost" type="button" data-testid="reload-runs" @click="reloadRuns">刷新运行记录</button>
+      </header>
+      <div class="run-list" data-testid="run-list">
+        <button
+          v-for="run in runs"
+          :key="run.执行编号"
+          type="button"
+          :class="['run-chip', { active: selectedRun?.执行编号 === run.执行编号 }]"
+          :data-testid="`run-chip-${run.执行编号}`"
+          @click="selectRun(run)"
+        >
+          {{ run.执行编号 }} · {{ run.执行状态 }} · {{ run.步骤回执数 }}/{{ run.步骤总数 }}
+        </button>
+        <span v-if="!runs.length" class="empty-state">暂无运行记录，选中流程节点后执行流程</span>
+      </div>
+
+      <div v-if="selectedRun" class="run-detail" data-testid="run-detail">
+        <dl><dt>运行编号</dt><dd>{{ selectedRun.执行编号 }}</dd></dl>
+        <dl><dt>执行状态</dt><dd>{{ selectedRun.执行状态 }}</dd></dl>
+        <dl><dt>流程版本</dt><dd>{{ selectedRun.流程版本 }}</dd></dl>
+        <dl><dt>完成步骤</dt><dd>{{ selectedRun.完成步骤数 }} / {{ selectedRun.步骤总数 }}</dd></dl>
+        <dl><dt>失败步骤</dt><dd>{{ selectedRun.失败步骤 ?? '—' }}</dd></dl>
+        <dl><dt>失败处理</dt><dd>{{ selectedRun.失败处理 ?? '—' }}</dd></dl>
+        <dl v-if="selectedRun.失败原因" style="grid-column:1/-1"><dt>失败原因</dt><dd class="error-text">{{ selectedRun.失败原因 }}</dd></dl>
+        <div style="grid-column:1/-1; display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;">
+          <button class="btn primary" type="button" data-testid="run-flow" @click="startRun(selectedRun.流程ID)">执行流程</button>
+          <button class="btn" type="button" data-testid="resume-run" :disabled="selectedRun.执行状态 === '已完成'" @click="resumeRun(selectedRun)">
+            从未完成步骤继续
+          </button>
+          <button class="btn" type="button" data-testid="land-batch" :disabled="selectedRun.执行状态 !== '已完成'" @click="landRun(selectedRun)">
+            生成落地批次回执
+          </button>
+        </div>
+
+        <h4 style="grid-column:1/-1; margin:8px 0 0;">步骤回执</h4>
+        <table class="data-table" data-testid="receipt-table" style="grid-column:1/-1">
+          <thead>
+            <tr><th>步骤序号</th><th>步骤名称</th><th>环节类型</th><th>完成状态</th><th>凭据编号</th><th>输出目标</th><th>完成时间</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="receipt in receipts" :key="receipt.凭据编号" :data-testid="`receipt-${receipt.步骤序号}`">
+              <td>{{ receipt.步骤序号 }}</td>
+              <td>{{ receipt.步骤名称 }}</td>
+              <td>{{ receipt.环节类型 }}</td>
+              <td>{{ receipt.完成状态 }}</td>
+              <td>{{ receipt.凭据编号 }}</td>
+              <td>{{ receipt.输出目标 }}</td>
+              <td>{{ receipt.完成时间 }}</td>
+            </tr>
+            <tr v-if="!receipts.length"><td colspan="7" class="empty-state">暂无步骤回执</td></tr>
+          </tbody>
+        </table>
+        <footer class="run-foot" data-testid="receipt-count" style="grid-column:1/-1">
+          已落地 {{ receipts.length }} / {{ selectedRun.步骤总数 }} 份步骤回执
+          <span v-if="validation">· 校验结论：{{ validation.校验结论 }}（{{ validation.步骤回执数 }} 份）</span>
+        </footer>
+
+        <div v-if="landing" class="landing-receipt" data-testid="landing-receipt" style="grid-column:1/-1">
+          <dl><dt>落地批次号</dt><dd>{{ landing.落地批次号 }}</dd></dl>
+          <dl><dt>流程版本</dt><dd>{{ landing.流程版本 }}</dd></dl>
+          <dl><dt>输出凭据</dt><dd>{{ landing.输出凭据 }}</dd></dl>
+          <dl><dt>校验结论</dt><dd>{{ landing.校验结论 }}</dd></dl>
+          <div style="grid-column:1/-1">
+            <span class="stat-label">步骤引用</span>
+            <span v-for="ref in landing.步骤引用" :key="ref.凭据编号" class="step-ref">{{ ref.步骤序号 }}·{{ ref.凭据编号 }} → {{ ref.输出目标 }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div v-if="showCreate" class="modal-backdrop" data-testid="create-modal">
       <form class="modal" @submit.prevent="submitCreate"><h3>登记流程编排</h3>
         <label v-for="field in columns.slice(0,3)" :key="field" class="create-field"><span>{{ field }}</span><input v-model="createValues[field]" :placeholder="`请输入${field}`" required /></label>
@@ -37,7 +112,10 @@
         </div>
       </form>
     </div>
-    <footer class="page-foot"><span>{{ graph.nodes.length }} 个节点</span></footer>
+    <footer class="page-foot">
+      <span>{{ graph.nodes.length }} 个节点</span>
+      <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
+    </footer>
   </section>
 </template>
 <script setup lang="ts">
@@ -57,6 +135,11 @@ const svgW = ref(800); const svgH = ref(400)
 const errorMessage = ref('')
 const creating = ref(false); const showCreate = ref(false)
 const createValues = ref<Record<string,string>>({})
+const runs = ref<any[]>([])
+const selectedRun = ref<any>(null)
+const receipts = ref<any[]>([])
+const validation = ref<any>(null)
+const landing = ref<any>(null)
 let dragNode: any = null; const dagRef = ref<HTMLElement|null>(null)
 function layout(nodes: any[]) {
   const w = 800; const h = Math.max(400, nodes.length * 80)
@@ -70,6 +153,78 @@ function startDrag(e: MouseEvent, node: any) { dragNode = node; const onMove = (
 async function reload() {
   try { const res = await request(ENDPOINT); const data = await res.json(); graph.nodes = data.nodes || []; graph.edges = data.edges || []; layout(graph.nodes) } catch(e) { errorMessage.value = '加载失败' }
 }
+async function reloadRuns() {
+  try {
+    const res = await request(`${ENDPOINT}/runs`)
+    const data = await res.json()
+    runs.value = data.items || []
+    if (selectedRun.value) {
+      const fresh = runs.value.find((run: any) => run.执行编号 === selectedRun.value.执行编号)
+      if (fresh) await selectRun(fresh)
+    }
+  } catch(e) { errorMessage.value = '运行记录读取失败' }
+}
+async function selectRun(run: any) {
+  selectedRun.value = run
+  landing.value = null
+  validation.value = null
+  try {
+    const res = await request(`${ENDPOINT}/snapshots/${encodeURIComponent(run.执行编号)}/receipts`)
+    if (res.ok) {
+      const data = await res.json()
+      receipts.value = data.items || []
+    } else {
+      receipts.value = []
+    }
+  } catch(e) { receipts.value = []; errorMessage.value = '步骤回执读取失败' }
+  if (run.执行状态 === '已完成') {
+    try {
+      const [vRes, lRes] = await Promise.all([
+        request(`${ENDPOINT}/snapshots/${encodeURIComponent(run.执行编号)}/validation`),
+        request(`${ENDPOINT}/snapshots/${encodeURIComponent(run.执行编号)}/landing`),
+      ])
+      if (vRes.ok) validation.value = await vRes.json()
+      if (lRes.ok) landing.value = await lRes.json()
+    } catch(e) { /* 校验结论与落地回执按需刷新 */ }
+  }
+}
+async function startRun(flowId: number) {
+  errorMessage.value = ''
+  try {
+    const res = await request(`${ENDPOINT}/${flowId}/run`, { method: 'POST', body: JSON.stringify({}) })
+    const data = await res.json()
+    if (!data.ok) throw new Error(data.message || '流程执行失败')
+    await reload()
+    await reloadRuns()
+    const executed = runs.value.find((run: any) => run.执行编号 === data.entry?.执行编号)
+    if (executed) await selectRun(executed)
+  } catch(e: any) { errorMessage.value = e.message; await reloadRuns() }
+}
+async function resumeRun(run: any) {
+  errorMessage.value = ''
+  try {
+    const resumeFrom = Number(run.失败步骤 || run.完成步骤数 + 1)
+    const res = await request(`${ENDPOINT}/${run.流程ID}/run`, {
+      method: 'POST', body: JSON.stringify({ resume_from: resumeFrom }),
+    })
+    const data = await res.json()
+    if (!data.ok) throw new Error(data.message || '续跑失败')
+    await reload()
+    await reloadRuns()
+    const executed = runs.value.find((item: any) => item.执行编号 === run.执行编号)
+    if (executed) await selectRun(executed)
+  } catch(e: any) { errorMessage.value = e.message; await reloadRuns() }
+}
+async function landRun(run: any) {
+  errorMessage.value = ''
+  try {
+    const res = await request(`${ENDPOINT}/snapshots/${encodeURIComponent(run.执行编号)}/land`, { method: 'POST', body: '{}' })
+    const data = await res.json()
+    if (!data.ok) throw new Error(data.message || '落地失败')
+    landing.value = data.entry
+    await selectRun(run)
+  } catch(e: any) { errorMessage.value = e.message }
+}
 async function runAction(action: string, node: any) {
   try { await request(`${ENDPOINT}/${node.id}/actions`, { method: 'POST', body: JSON.stringify({ action }) }); await reload() } catch(e) { errorMessage.value = '操作失败' }
 }
@@ -78,5 +233,5 @@ async function submitCreate() {
   try { const res = await request(ENDPOINT, { method: 'POST', body: JSON.stringify({ values: createValues.value }) }); if(!res.ok) throw new Error('创建失败'); showCreate.value = false; await reload() } catch(e: any) { errorMessage.value = e.message }
 }
 function exportRows() { window.open(`${ENDPOINT}/export`, '_blank') }
-onMounted(reload)
+onMounted(async () => { await reload(); await reloadRuns() })
 </script>

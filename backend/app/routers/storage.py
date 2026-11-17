@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import csv
 import io
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
+from app.services.flowrun import flow_run_service
 from app.services.storage import StorageService
 
 router = APIRouter(prefix="/api/storage", tags=["存储落地"])
@@ -63,6 +65,12 @@ def export_entries(
     return StreamingResponse(
         iter([output.getvalue()]), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="storage.csv"'})
+
+
+@router.get("/landing-ledger")
+def list_landing_ledger() -> dict[str, Any]:
+    """存储落地的落地批次回执清单：每条都带流程版本与快照校验结论。"""
+    return {"items": flow_run_service.list_ledger()}
 
 
 @router.get("/{entry_id}", response_model=dict)

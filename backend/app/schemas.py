@@ -35,6 +35,27 @@ class ActionPayload(BaseModel):
     remark: str | None = None
 
 
+class FlowRunPayload(BaseModel):
+    """流程执行请求：契约字段保持稳定，新增项均可省略。
+
+    values 里可带「原始数据」「输出目标」；也接受顶层同名字段，避免调用方改契约。
+    """
+
+    resume_from: int | None = Field(default=None, ge=1)
+    fail_at_step: int | None = Field(default=None, ge=1)
+    values: dict[str, Any] = Field(default_factory=dict)
+    原始数据: str | None = None
+    输出目标: str | None = None
+
+    def merged_values(self) -> dict[str, Any]:
+        merged = dict(self.values)
+        if self.原始数据 is not None:
+            merged.setdefault("原始数据", self.原始数据)
+        if self.输出目标 is not None:
+            merged.setdefault("输出目标", self.输出目标)
+        return merged
+
+
 
 class TargetsiteEntry(BaseModel):
     """目标站点明细结构。"""

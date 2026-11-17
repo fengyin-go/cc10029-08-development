@@ -610,6 +610,41 @@ test('分析看板模块：KPI卡片、运行分析、图表渲染', async ({ pa
   expect(browserErrors).toEqual([])
 })
 
+test('采集流程：执行快照、步骤回执、落地批次与恢复执行核对', async ({ page }) => {
+  test.setTimeout(300_000)
+  const browserErrors: string[] = []
+  page.on('pageerror', e => browserErrors.push(e.message))
+  page.on('response', r => { if (r.url().includes('/api/') && r.status()>=400) browserErrors.push(`${r.status()} ${r.url()}`) })
+
+  await page.goto('/flowline')
+  await expect(page.locator('svg.dag-svg')).toBeVisible()
+  await page.locator('g.dag-node').first().waitFor({ timeout: 10000 })
+
+  // 选定流程运行并执行，查看步骤回执
+  await page.locator('g.dag-node').first().click()
+  await expect(page.getByTestId('dag-detail')).toBeVisible()
+  await page.getByTestId('run-1').click()
+  await expect(page.getByTestId('run-detail')).toBeVisible()
+  await expect(page.getByTestId('receipt-table')).toBeVisible()
+  const receipts = page.locator('[data-testid^="receipt-"]')
+  const firstCount = await receipts.count()
+  expect(firstCount).toBeGreaterThan(0)
+  await expect(page.getByTestId('receipt-count')).toContainText('已落地')
+
+  // 落地批次回执引用步骤输出与流程版本
+  await page.getByTestId('land-batch').click()
+  await expect(page.getByTestId('landing-receipt')).toBeVisible()
+  await expect(page.getByTestId('landing-receipt')).toContainText('校验结论')
+
+  // 选定另一次运行核对恢复执行后的回执数量
+  const chips = page.locator('[data-testid^="run-chip-"]')
+  await chips.last().click()
+  await expect(page.getByTestId('run-detail')).toBeVisible()
+  await expect(page.getByTestId('receipt-count')).toContainText('份步骤回执')
+
+  expect(browserErrors).toEqual([])
+})
+
 test('概览汇总', async ({ page }) => {
   test.setTimeout(300_000)
   const totalNew = modules.length * 3
